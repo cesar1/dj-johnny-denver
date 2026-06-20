@@ -216,13 +216,17 @@ class HandlerTest(unittest.TestCase):
             )
 
     # ── Failure handling ──────────────────────────────────────────────
-    def test_ses_failure_returns_500(self):
+    def test_ses_failure_returns_500_but_lead_is_still_stored(self):
         lambda_function.ses.send_email.side_effect = ClientError(
             {"Error": {"Code": "MessageRejected", "Message": "rejected"}},
             "SendEmail",
         )
         res = lambda_function.handler(make_event(VALID_BOOKING), None)
         self.assertEqual(res["statusCode"], 500)
+        # The booking is durable even when the notification email fails — this
+        # is exactly the "stored but not emailed" case the CloudWatch alarm
+        # (BOOKING_EMAIL_FAILED log marker) is there to catch.
+        lambda_function.ddb.put_item.assert_called_once()
 
     def test_dynamodb_failure_returns_500_and_skips_email(self):
         lambda_function.ddb.put_item.side_effect = ClientError(

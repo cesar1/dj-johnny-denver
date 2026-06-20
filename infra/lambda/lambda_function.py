@@ -119,12 +119,19 @@ def handler(event, context):
         "message":   message,
     }
 
+    # 3. STORE — durable record of every booking
     try:
-        # 3. STORE — durable record of every booking
         ddb.put_item(Item=booking)
+    except ClientError as err:
+        # Nothing was saved; the customer is told it failed and can retry.
+        print(f"BOOKING_PUT_FAILED id={booking['id']}: {err}")
+        return _response(500, {"error": "Error al guardar la reserva"})
 
-        # 4. NOTIFY — email DJ Johnny. From = verified domain (passes DMARC);
-        #    To = his Yahoo inbox; Reply-To = the customer so he can just reply.
+    # 4. NOTIFY — email DJ Johnny. From = verified domain (passes DMARC);
+    #    To = his Yahoo inbox; Reply-To = the customer so he can just reply.
+    #    The lead is ALREADY stored, so a failure here is a stored-but-not-
+    #    notified lead — log a distinct marker the CloudWatch alarm watches for.
+    try:
         ses.send_email(
             FromEmailAddress=FROM_ADDRESS,
             Destination={"ToAddresses": [TO_ADDRESS]},
@@ -142,10 +149,9 @@ def handler(event, context):
                 )}},
             }},
         )
-
-        # 5. RESPOND — this JSON is what fetch() in main.js receives
-        return _response(200, {"ok": True})
-
     except ClientError as err:
-        print(err)  # lands in CloudWatch Logs automatically
-        return _response(500, {"error": "Error al guardar la reserva"})
+        print(f"BOOKING_EMAIL_FAILED id={booking['id']}: {err}")
+        return _response(500, {"error": "No se pudo enviar la notificación"})
+
+    # 5. RESPOND — this JSON is what fetch() in main.js receives
+    return _response(200, {"ok": True})

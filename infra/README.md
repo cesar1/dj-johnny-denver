@@ -150,6 +150,72 @@ booking-form block. It's a public URL (no secret), so it's safe to commit.
 const BOOKING_API_URL = 'https://abc123.execute-api.us-east-1.amazonaws.com';
 ```
 
+### 7. Monitoring & alerts (CloudWatch)
+
+The handler stores the booking *before* it emails Johnny, so a lead is never
+lost — but if the SES send then fails (`BOOKING_EMAIL_FAILED`), the row is in
+DynamoDB while Johnny's inbox gets nothing. Johnny reads email, not CloudWatch,
+so that lead would be invisible. These alarms email you when that happens.
+
+> **Why not just alarm on the Lambda `Errors` metric?** Because the handler
+> *catches* the failure and returns a clean `500`, so Lambda counts the
+> invocation as a success — `AWS/Lambda Errors` would never fire for the
+> stored-but-not-emailed case. We watch the log markers instead, and keep an
+> `Errors` alarm only for *unhandled* crashes (timeouts, OOM, bad deploys).
+
+```bash
+# Where alerts go — set to whoever maintains the site (NOT a customer).
+ALERT_EMAIL=you@example.com
+
+# 1. SNS topic + email subscription (click the confirmation email once to arm it)
+ALERT_TOPIC_ARN=$(aws sns create-topic --name chupon-booking-alerts \
+  --query TopicArn --output text --region "$AWS_REGION")
+
+aws sns subscribe --topic-arn "$ALERT_TOPIC_ARN" \
+  --protocol email --notification-endpoint "$ALERT_EMAIL" \
+  --region "$AWS_REGION"
+
+# 2. Log metric filter: count the handler's failure markers in the log group.
+#    (The log group is created automatically on the function's first invocation.)
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/chupon-booking \
+  --filter-name booking-handled-errors \
+  --filter-pattern '?BOOKING_EMAIL_FAILED ?BOOKING_PUT_FAILED' \
+  --metric-transformations \
+      metricName=BookingHandledErrors,metricNamespace=Chupon/Booking,metricValue=1,defaultValue=0 \
+  --region "$AWS_REGION"
+
+# 3a. Alarm on those handled failures (the stored-but-not-emailed case)
+aws cloudwatch put-metric-alarm \
+  --alarm-name chupon-booking-handled-errors \
+  --alarm-description "Booking handler logged a PUT/EMAIL failure — check DynamoDB for an un-emailed lead" \
+  --namespace Chupon/Booking --metric-name BookingHandledErrors \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions "$ALERT_TOPIC_ARN" --region "$AWS_REGION"
+
+# 3b. Alarm on UNHANDLED failures (timeouts, OOM, runtime crashes)
+aws cloudwatch put-metric-alarm \
+  --alarm-name chupon-booking-lambda-errors \
+  --alarm-description "Booking Lambda threw an unhandled error (crash/timeout)" \
+  --namespace AWS/Lambda --metric-name Errors \
+  --dimensions Name=FunctionName,Value=chupon-booking \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions "$ALERT_TOPIC_ARN" --region "$AWS_REGION"
+```
+
+When `chupon-booking-handled-errors` fires, find the un-emailed lead in the
+logs and DynamoDB:
+
+```bash
+aws logs filter-log-events --log-group-name /aws/lambda/chupon-booking \
+  --filter-pattern BOOKING_EMAIL_FAILED --region "$AWS_REGION"
+# each match prints `id=<uuid>` — look that id up in the chupon-bookings table.
+```
+
 ---
 
 ## Important: keep `infra/` out of the S3 site
