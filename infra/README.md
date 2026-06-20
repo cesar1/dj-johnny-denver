@@ -79,6 +79,16 @@ aws iam put-role-policy --role-name chupon-booking-lambda \
   --policy-name booking-ddb-ses --policy-document file://iam-policy.json
 ```
 
+> **Why `ses:SendEmail` is scoped to `identity/*` (not just the sender domain).**
+> In the SES **sandbox**, `SendEmail` is authorized against the *recipient*
+> identity too — so a policy that only grants the sender domain
+> (`identity/djjohnnydenver.com`) fails with `AccessDeniedException` on
+> `identity/<recipient>`. We grant `identity/*` but pin the sender with a
+> `ses:FromAddress` condition, so the Lambda can still only send **as**
+> `bookings@djjohnnydenver.com`. This also survives the move to production
+> access (where recipients aren't identities at all). Don't "tighten" the
+> Resource back to a single identity or sandbox sends break again.
+
 ### 4. Deploy the Lambda
 
 ```bash
