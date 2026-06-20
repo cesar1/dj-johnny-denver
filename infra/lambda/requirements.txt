@@ -1,0 +1,17 @@
+# DJ Johnny — booking Lambda dependencies
+#
+# The handler only uses the Python standard library (json, os, uuid, datetime)
+# plus boto3 (which bundles botocore). boto3 is PREINSTALLED in the AWS Lambda
+# Python 3.13 runtime, so you do NOT need to ship it in function.zip — keep the
+# deployment package as just lambda_function.py.
+#
+# This file exists for LOCAL development/testing (e.g. running unit tests or
+# invoking the handler locally). Install into a virtualenv:
+#
+#   python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+#   pip install -r requirements.txt
+#
+# Only bundle boto3 into the zip if you need an API newer than the runtime's
+# version; then `pip install -r requirements.txt -t .` before zipping.
+
+boto3>=1.34

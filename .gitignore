@@ -1,0 +1,29 @@
+# ── Secrets & credentials ─────────────────────────────
+.env
+.env.*
+*.pem
+aws.json
+credentials
+.aws/
+*.key
+
+# ── Python (infra/lambda) ─────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ── Lambda build artifacts ────────────────────────────
+function.zip
+infra/lambda/function.zip
+trust.json
+
+# ── OS / editor cruft ─────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
