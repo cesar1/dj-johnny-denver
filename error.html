@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es-419">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Página no encontrada | DJ Johnny Denver</title>
+  <meta name="robots" content="noindex">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;500;600&family=Orbitron:wght@600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --black: #060609; --teal: #00d2d2; --teal-bright: #00ffff;
+      --purple: #7c2ef0; --white: #f0f4ff; --muted: #6e6e8e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 1.5rem; padding: 2rem; text-align: center;
+      background:
+        radial-gradient(circle at 50% 30%, rgba(0,210,210,0.12), transparent 60%),
+        var(--black);
+      color: var(--white);
+      font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    }
+    .code {
+      font-family: 'Bebas Neue', Impact, sans-serif;
+      font-size: clamp(7rem, 28vw, 16rem);
+      line-height: 0.9; letter-spacing: 0.04em;
+      color: var(--teal-bright);
+      text-shadow: 0 0 18px rgba(0,210,210,0.55), 0 0 70px rgba(0,210,210,0.25);
+    }
+    .label {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.8rem; letter-spacing: 0.45em; text-transform: uppercase;
+      color: var(--teal); margin-bottom: -0.5rem;
+    }
+    h1 {
+      font-family: 'Bebas Neue', Impact, sans-serif;
+      font-size: clamp(1.8rem, 6vw, 3rem); letter-spacing: 0.03em; font-weight: 400;
+    }
+    p { font-size: 1.15rem; color: var(--muted); max-width: 32rem; }
+    a.home {
+      margin-top: 0.75rem; display: inline-block;
+      padding: 0.85rem 2.2rem;
+      font-family: 'Orbitron', monospace; font-weight: 600;
+      font-size: 0.85rem; letter-spacing: 0.18em; text-transform: uppercase;
+      text-decoration: none; color: var(--black);
+      background: var(--teal); border-radius: 3px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    a.home:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 18px rgba(0,210,210,0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="label">Error 404</div>
+  <div class="code">404</div>
+  <h1>Esta pista no existe</h1>
+  <p>La página que buscas se perdió en la mezcla. Volvamos al ritmo.</p>
+  <a class="home" href="/">Volver al inicio</a>
+</body>
+</html>
