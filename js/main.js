@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Public API Gateway endpoint (no secret — safe to commit).
   // Set this to the ApiEndpoint printed by `aws apigatewayv2 create-api`.
   // See infra/README.md for the full backend setup.
-  const BOOKING_API_URL = 'https://REPLACE-ME.execute-api.us-east-1.amazonaws.com';
+  const BOOKING_API_URL = 'https://8w2e2k3fe8.execute-api.us-west-2.amazonaws.com';
 
   const form       = document.getElementById('booking-form');
   const successMsg = document.getElementById('form-success');
