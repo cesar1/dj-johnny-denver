@@ -120,7 +120,26 @@ aws lambda add-permission \
 ```
 
 `create-api` prints an `ApiEndpoint` like
-`https://abc123.execute-api.us-east-1.amazonaws.com`.
+`https://abc123.execute-api.us-east-1.amazonaws.com` (and an `ApiId`).
+
+### 5b. Throttle the endpoint (abuse cap)
+
+This is a public, unauthenticated endpoint. Cap the request rate on the
+auto-created `$default` stage so a bot can't run up SES/DynamoDB cost or flood
+the inbox. A booking form needs only a trickle, so keep the limits low:
+
+```bash
+# Use the ApiId printed by create-api above
+aws apigatewayv2 update-stage \
+  --api-id <API_ID> \
+  --stage-name '$default' \
+  --default-route-settings ThrottlingRateLimit=5,ThrottlingBurstLimit=10 \
+  --region "$AWS_REGION"
+```
+
+`ThrottlingRateLimit` is steady-state requests/sec; `ThrottlingBurstLimit` is the
+bucket size. Excess requests get a `429` at the edge — they never reach the
+Lambda. The in-code honeypot + length caps are the second layer behind this.
 
 ### 6. Wire the front end
 

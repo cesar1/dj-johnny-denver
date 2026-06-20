@@ -321,23 +321,28 @@
 
         <div class="col-lg-7 reveal" style="--delay: 0.15s">
           <form id="booking-form" class="booking-form" novalidate aria-label="Formulario de consulta de reserva de evento">
+            <!-- Honeypot: hidden from people; bots that fill it are dropped server-side -->
+            <div class="hp-field" aria-hidden="true">
+              <label for="website">No llenar este campo</label>
+              <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+            </div>
             <div class="row g-3">
               <div class="col-sm-6">
                 <div class="form-group">
                   <label for="name">Tu Nombre <span aria-hidden="true">*</span></label>
-                  <input type="text" id="name" class="form-control" placeholder="Juan Pérez" required autocomplete="name">
+                  <input type="text" id="name" class="form-control" placeholder="Juan Pérez" required autocomplete="name" maxlength="100">
                 </div>
               </div>
               <div class="col-sm-6">
                 <div class="form-group">
                   <label for="email">Correo Electrónico <span aria-hidden="true">*</span></label>
-                  <input type="email" id="email" class="form-control" placeholder="juan@ejemplo.com" required autocomplete="email">
+                  <input type="email" id="email" class="form-control" placeholder="juan@ejemplo.com" required autocomplete="email" maxlength="254">
                 </div>
               </div>
               <div class="col-sm-6">
                 <div class="form-group">
                   <label for="phone">Número de Teléfono</label>
-                  <input type="tel" id="phone" class="form-control" placeholder="(720) 555-0000" autocomplete="tel">
+                  <input type="tel" id="phone" class="form-control" placeholder="(720) 555-0000" autocomplete="tel" maxlength="40">
                 </div>
               </div>
               <div class="col-sm-6">
@@ -364,13 +369,13 @@
               <div class="col-12">
                 <div class="form-group">
                   <label for="venue">Lugar / Ubicación</label>
-                  <input type="text" id="venue" class="form-control" placeholder="Nombre del lugar, Denver, CO">
+                  <input type="text" id="venue" class="form-control" placeholder="Nombre del lugar, Denver, CO" maxlength="200">
                 </div>
               </div>
               <div class="col-12">
                 <div class="form-group">
                   <label for="message">Cuéntame Sobre Tu Evento</label>
-                  <textarea id="message" class="form-control" rows="4" placeholder="Preferencias musicales, solicitudes especiales, número de invitados..."></textarea>
+                  <textarea id="message" class="form-control" rows="4" maxlength="2000" placeholder="Preferencias musicales, solicitudes especiales, número de invitados..."></textarea>
                 </div>
               </div>
               <div class="col-12">

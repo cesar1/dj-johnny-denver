@@ -16,6 +16,7 @@ Environment variables (set on the Lambda function):
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -36,6 +37,28 @@ CORS = {
     "Access-Control-Allow-Methods": "POST,OPTIONS",
 }
 
+# ── Validation rules ────────────────────────────────────────────────
+# event_type must be one of the form's <option> values (index.html).
+EVENT_TYPES = {
+    "wedding", "corporate", "birthday", "quinceanera",
+    "anniversary", "nightclub", "other",
+}
+
+# Max accepted length per field. Rejects oversized payloads and keeps every
+# stored item far under DynamoDB's 400 KB item limit.
+MAX_LEN = {
+    "name": 100, "email": 254, "phone": 40, "event_date": 10,
+    "event_type": 20, "venue": 200, "message": 2000,
+}
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+DATE_RE  = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Honeypot — a hidden form field real visitors never fill. If it arrives
+# non-empty the request is almost certainly a bot: we return success (so the
+# bot sees no signal) but store and email nothing.
+HONEYPOT_FIELD = "website"
+
 
 def _response(status, payload):
     return {"statusCode": status, "headers": CORS, "body": json.dumps(payload)}
@@ -55,23 +78,45 @@ def handler(event, context):
     except (ValueError, TypeError):
         return _response(400, {"error": "Cuerpo de la solicitud no válido"})
 
-    # 2. VALIDATE — never trust the browser; re-check what the JS checks
-    if (not data.get("name", "").strip()
-            or "@" not in data.get("email", "")
-            or not data.get("event_date")
-            or not data.get("event_type")):
-        return _response(400, {"error": "Faltan campos requeridos"})
+    if not isinstance(data, dict):
+        return _response(400, {"error": "Cuerpo de la solicitud no válido"})
+
+    # Honeypot — silently drop bot submissions (pretend success, store nothing).
+    if str(data.get(HONEYPOT_FIELD, "")).strip():
+        return _response(200, {"ok": True})
+
+    # 2. VALIDATE — never trust the browser; re-check what the JS checks.
+    #    Coerce to str first so non-string JSON values can't crash .strip().
+    name       = str(data.get("name", "")).strip()
+    email      = str(data.get("email", "")).strip()
+    phone      = str(data.get("phone", "")).strip()
+    event_date = str(data.get("event_date", "")).strip()
+    event_type = str(data.get("event_type", "")).strip()
+    venue      = str(data.get("venue", "")).strip()
+    message    = str(data.get("message", "")).strip()
+
+    if (not name
+            or not EMAIL_RE.match(email)
+            or not DATE_RE.match(event_date)
+            or event_type not in EVENT_TYPES):
+        return _response(400, {"error": "Faltan campos requeridos o son inválidos"})
+
+    values = {"name": name, "email": email, "phone": phone,
+              "event_date": event_date, "event_type": event_type,
+              "venue": venue, "message": message}
+    if any(len(v) > MAX_LEN[k] for k, v in values.items()):
+        return _response(400, {"error": "Uno o más campos exceden la longitud permitida"})
 
     booking = {
         "id":        str(uuid.uuid4()),                       # partition key
         "createdAt": datetime.now(timezone.utc).isoformat(),
-        "name":      data["name"].strip(),
-        "email":     data["email"].strip(),
-        "phone":     data.get("phone", "").strip(),
-        "eventDate": data["event_date"],
-        "eventType": data["event_type"],
-        "venue":     data.get("venue", "").strip(),
-        "message":   data.get("message", "").strip(),
+        "name":      name,
+        "email":     email,
+        "phone":     phone,
+        "eventDate": event_date,
+        "eventType": event_type,
+        "venue":     venue,
+        "message":   message,
     }
 
     try:
@@ -89,7 +134,7 @@ def handler(event, context):
                 "Body": {"Text": {"Data": (
                     f"Nombre:  {booking['name']}\n"
                     f"Email:   {booking['email']}\n"
-                    f"Teléfono:{booking['phone']}\n"
+                    f"Teléfono: {booking['phone']}\n"
                     f"Evento:  {booking['eventType']} el {booking['eventDate']}\n"
                     f"Lugar:   {booking['venue']}\n\n"
                     f"Mensaje:\n{booking['message']}\n\n"

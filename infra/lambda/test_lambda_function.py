@@ -142,6 +142,60 @@ class HandlerTest(unittest.TestCase):
         res = lambda_function.handler(event, None)
         self.assertEqual(res["statusCode"], 400)
 
+    def test_non_object_json_body_returns_400(self):
+        # Valid JSON, but not an object — must not crash with AttributeError.
+        for body in ("123", '"hello"', "[1, 2, 3]", "null"):
+            with self.subTest(body=body):
+                res = lambda_function.handler(make_event(body), None)
+                self.assertEqual(res["statusCode"], 400)
+                lambda_function.ddb.put_item.assert_not_called()
+
+    def test_non_string_field_does_not_crash(self):
+        # A bot sending {"name": 5, ...} must get a clean 400, not a 500.
+        body = {**VALID_BOOKING, "name": 5, "message": {"nested": "object"}}
+        res = lambda_function.handler(make_event(body), None)
+        # name=5 coerces to "5" (valid), message coerces to str — should store.
+        self.assertEqual(res["statusCode"], 200)
+
+    def test_invalid_event_type_returns_400(self):
+        body = {**VALID_BOOKING, "event_type": "haxx"}
+        res = lambda_function.handler(make_event(body), None)
+        self.assertEqual(res["statusCode"], 400)
+        lambda_function.ddb.put_item.assert_not_called()
+
+    def test_invalid_event_date_format_returns_400(self):
+        body = {**VALID_BOOKING, "event_date": "next tuesday"}
+        res = lambda_function.handler(make_event(body), None)
+        self.assertEqual(res["statusCode"], 400)
+
+    def test_email_without_dot_returns_400(self):
+        # The old weak check ("@" in email) let this through; the regex blocks it.
+        body = {**VALID_BOOKING, "email": "juan@localhost"}
+        res = lambda_function.handler(make_event(body), None)
+        self.assertEqual(res["statusCode"], 400)
+
+    def test_oversized_field_returns_400(self):
+        body = {**VALID_BOOKING, "message": "x" * 2001}
+        res = lambda_function.handler(make_event(body), None)
+        self.assertEqual(res["statusCode"], 400)
+        lambda_function.ddb.put_item.assert_not_called()
+
+    # ── Honeypot ──────────────────────────────────────────────────────
+    def test_honeypot_filled_is_silently_dropped(self):
+        body = {**VALID_BOOKING, "website": "http://spam.example"}
+        res = lambda_function.handler(make_event(body), None)
+        # Pretends success so the bot gets no signal...
+        self.assertEqual(res["statusCode"], 200)
+        # ...but nothing is stored or emailed.
+        lambda_function.ddb.put_item.assert_not_called()
+        lambda_function.ses.send_email.assert_not_called()
+
+    def test_empty_honeypot_is_accepted(self):
+        body = {**VALID_BOOKING, "website": ""}
+        res = lambda_function.handler(make_event(body), None)
+        self.assertEqual(res["statusCode"], 200)
+        lambda_function.ddb.put_item.assert_called_once()
+
     # ── CORS / preflight ──────────────────────────────────────────────
     def test_options_preflight_short_circuits(self):
         res = lambda_function.handler(make_event({}, method="OPTIONS"), None)

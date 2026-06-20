@@ -100,6 +100,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (form && successMsg) {
 
+    // Prevent picking a past date in the event-date field
+    const dateField = form.querySelector('#event-date');
+    if (dateField) dateField.min = new Date().toISOString().split('T')[0];
+
     // Clear invalid state on user input
     form.querySelectorAll('.form-control').forEach((field) => {
       field.addEventListener('input', () => {
@@ -148,7 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnIcon)   btnIcon.style.opacity = loading ? '0.5' : '';
       };
 
-      // Map form fields to the snake_case keys the Lambda expects
+      // Map form fields to the snake_case keys the Lambda expects.
+      // `website` is the honeypot — always empty for real users.
       const payload = {
         name:       form.querySelector('#name').value.trim(),
         email:      form.querySelector('#email').value.trim(),
@@ -157,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         event_type: form.querySelector('#event-type').value,
         venue:      form.querySelector('#venue').value.trim(),
         message:    form.querySelector('#message').value.trim(),
+        website:    form.querySelector('#website')?.value.trim() ?? '',
       };
 
       setLoading(true);

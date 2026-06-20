@@ -814,6 +814,16 @@ h1, h2, h3 {
   padding: 2.5rem;
 }
 
+/* Honeypot — kept in the DOM (so bots fill it) but off-screen for humans.
+   Not display:none, which some bots skip. */
+.hp-field {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
