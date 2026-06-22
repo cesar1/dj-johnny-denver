@@ -4,6 +4,12 @@ A **production**, fully responsive marketing site for a professional event DJ, b
 
 🔗 **Live site:** https://djjohnnydenver.com
 
+<p align="center">
+  <a href="https://djjohnnydenver.com">
+    <img src="docs/preview.png" alt="DJ Johnny Denver landing page — hero section" width="800">
+  </a>
+</p>
+
 > The site is localized in Spanish (`es-419`) for its Denver-area Latino audience — the content language is intentional, not a placeholder.
 
 ---
