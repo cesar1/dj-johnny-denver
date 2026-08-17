@@ -1,0 +1,85 @@
+name: Deploy booking Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/lambda/**
+      - .github/workflows/deploy-lambda.yml
+  # Handler changes get tested on PRs too — the deploy job below is push-only.
+  pull_request:
+    paths:
+      - infra/lambda/**
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-lambda
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'   # match the Lambda runtime
+
+      # lambda_function.py imports boto3 at module scope, so it must be
+      # installed even though every AWS client is mocked in the tests.
+      - name: Install dependencies
+        run: pip install -r infra/lambda/requirements.txt
+
+      - name: Run unit tests
+        working-directory: infra/lambda
+        run: python -m unittest test_lambda_function -v
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Ship only the handler — boto3 is preinstalled in the Python 3.13 runtime
+      # (see infra/lambda/requirements.txt), so bundling it would just bloat the zip.
+      - name: Package and deploy
+        working-directory: infra/lambda
+        run: |
+          zip function.zip lambda_function.py
+          aws lambda update-function-code \
+            --function-name chupon-booking \
+            --zip-file fileb://function.zip \
+            --no-cli-pager
+          aws lambda wait function-updated --function-name chupon-booking
+          echo "chupon-booking updated."
+
+      # Hits the real endpoint but causes NOTHING to happen: the `website` field
+      # is the honeypot, and lambda_function.py:84-86 returns 200 for honeypot
+      # hits before any validation, storage, or email. So this proves API Gateway
+      # routing + the new code are live without writing a junk row to DynamoDB
+      # or mailing Johnny a fake booking.
+      - name: Smoke test the live endpoint (honeypot, no side effects)
+        run: |
+          status=$(curl -s -o /tmp/body.json -w '%{http_code}' \
+            -X POST https://8w2e2k3fe8.execute-api.us-west-2.amazonaws.com \
+            -H 'Content-Type: application/json' \
+            -d '{"website":"github-actions-smoke-test"}')
+
+          echo "HTTP $status — $(cat /tmp/body.json)"
+          if [ "$status" != "200" ]; then
+            echo "Expected 200 from the honeypot path, got $status."
+            exit 1
+          fi
+          echo "Booking endpoint is live."

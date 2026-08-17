@@ -226,22 +226,63 @@ aws logs filter-log-events --log-group-name /aws/lambda/chupon-booking \
 # each match prints `id=<uuid>` — look that id up in the chupon-bookings table.
 ```
 
----
+### 8. GitHub Actions OIDC (CI/CD)
 
-## Important: keep `infra/` out of the S3 site
-
-The deploy command in the root `CLAUDE.md` runs `aws s3 sync . s3://…`, which would
-upload this `infra/` folder to the public website. Add an exclude:
+Lets the workflows in `.github/workflows/` deploy without any long-lived AWS
+credentials stored in GitHub. GitHub mints a short-lived OIDC token per run and
+AWS trades it for temporary credentials — nothing to rotate, nothing to leak.
 
 ```bash
-aws s3 sync . s3://YOUR-BUCKET-NAME \
-  --exclude ".git/*" \
-  --exclude "CLAUDE.md" \
-  --exclude "*.md" \
-  --exclude "infra/*" \      # ← add this
-  --delete \
-  --cache-control "max-age=86400, public"
+# The OIDC identity provider (one per account — reuse it if it already exists)
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com
+
+# Edit both policy files first: replace ACCOUNT_ID, REGION, and DISTRIBUTION_ID
+aws iam create-role --role-name chupon-gha-deploy \
+  --assume-role-policy-document file://infra/github-oidc-trust-policy.json
+
+aws iam put-role-policy --role-name chupon-gha-deploy \
+  --policy-name chupon-gha-deploy \
+  --policy-document file://infra/github-oidc-deploy-policy.json
 ```
+
+Then point the workflows at it with GitHub **variables** (not secrets — none of
+these are credentials, and variables keep account IDs out of a public repo):
+
+```bash
+gh variable set AWS_ROLE_ARN --body "arn:aws:iam::${ACCOUNT_ID}:role/chupon-gha-deploy"
+gh variable set AWS_REGION --body "us-west-2"
+gh variable set S3_BUCKET --body "djjohnnydenver.com"
+gh variable set CLOUDFRONT_DISTRIBUTION_ID --body "YOUR_DISTRIBUTION_ID"
+```
+
+> **The trust policy is the security boundary, not the permissions policy.**
+> `github-oidc-trust-policy.json` pins `sub` to
+> `repo:cesar1/dj-johnny-denver:ref:refs/heads/main`, so only workflow runs on
+> *this repo's main branch* can assume the role — a fork, a PR branch, or another
+> repo entirely all fail at `AssumeRoleWithWebIdentity`. If you ever want deploys
+> from a second branch or a tag, that string is the thing to widen; loosening it
+> to a wildcard would let any repo on GitHub assume the role.
+
+> **Every workflow that assumes this role needs `permissions: id-token: write`.**
+> Omitting it is the most common failure mode and surfaces as the misleading
+> `Credentials could not be loaded` from `configure-aws-credentials`.
+
+---
+
+## Important: keep `infra/` and `.github/` out of the S3 site
+
+The site deploy runs `aws s3 sync . s3://…` from the repo root, which without
+excludes would publish this `infra/` folder — and the `.github/` workflows — to
+the public website.
+
+Both are already excluded in `.github/workflows/deploy-site.yml`, which is the
+canonical deploy path; the block in the root `CLAUDE.md` is the manual fallback
+and carries the same list. **If you add an exclude to one, add it to the other.**
+
+> `--exclude` also protects a file from `--delete`. Adding an exclude does *not*
+> remove what is already in the bucket — clear it once with `aws s3 rm`.
 
 ## Testing
 

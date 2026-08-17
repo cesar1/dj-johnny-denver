@@ -1,0 +1,114 @@
+name: Deploy site
+
+# Only fires when something the public site actually serves has changed, so an
+# edit to infra/ or the README never re-syncs 28 MB of photos.
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - error.html
+      - css/**
+      - js/**
+      - images/**
+      - logos/**
+      - favicon.svg
+      - robots.txt
+      - sitemap.xml
+      - .github/workflows/deploy-site.yml
+  workflow_dispatch:
+
+# id-token: write is what lets the runner mint an OIDC token for AWS.
+# Without it, configure-aws-credentials fails with "Credentials could not be loaded".
+permissions:
+  id-token: write
+  contents: read
+
+# Queue deploys rather than cancelling one mid-sync — a half-finished
+# `s3 sync --delete` against production is not a state worth reaching.
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify every local image source resolves
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          missing = []
+          for page in ("index.html", "error.html"):
+              html = pathlib.Path(page).read_text(encoding="utf-8")
+              for src in re.findall(r'<img[^>]+src="([^"]+)"', html):
+                  if src.startswith(("http://", "https://", "data:", "//")):
+                      continue
+                  if not pathlib.Path(src.lstrip("/")).is_file():
+                      missing.append(f"{page} -> {src}")
+
+          if missing:
+              print("Image sources that do not resolve to a file in the repo:")
+              print(*missing, sep="\n  ")
+              sys.exit(1)
+          print("All local image sources resolve.")
+          PY
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Pass 1 — the site shell. Stable filenames that get edited in place, so
+      # they must revalidate often. Imagery is excluded here and handled below.
+      #
+      # NOTE: --exclude also protects a file from --delete. That is why nothing
+      # excluded here is ever cleaned out of the bucket automatically.
+      - name: Sync site shell (1h TTL)
+        run: |
+          aws s3 sync . "s3://${{ vars.S3_BUCKET }}" --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --exclude ".claude/*" \
+            --exclude ".gitignore" \
+            --exclude "CLAUDE.md" \
+            --exclude "*.md" \
+            --exclude "infra/*" \
+            --exclude "docs/*" \
+            --exclude "images/*" \
+            --exclude "logos/*" \
+            --cache-control "max-age=3600, public"
+
+      # Pass 2 — imagery. Long TTL because these are added over time rather than
+      # overwritten. Deliberately NOT `immutable`: filenames aren't content-hashed,
+      # and `immutable` cannot be undone by a CloudFront invalidation.
+      - name: Sync imagery (30d TTL)
+        run: |
+          aws s3 sync images/ "s3://${{ vars.S3_BUCKET }}/images/" --delete \
+            --cache-control "max-age=2592000, public"
+          aws s3 sync logos/ "s3://${{ vars.S3_BUCKET }}/logos/" --delete \
+            --cache-control "max-age=2592000, public"
+
+      # Without this the bucket updates and the CDN keeps serving the old page —
+      # a deploy that looks like it silently did nothing.
+      - name: Invalidate CloudFront and wait
+        run: |
+          id=$(aws cloudfront create-invalidation \
+                 --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+                 --paths "/*" \
+                 --query 'Invalidation.Id' --output text)
+          echo "Invalidation $id created; waiting for it to complete..."
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" --id "$id"
+          echo "Invalidation $id complete."
+
+      - name: Smoke test the live site
+        run: |
+          body=$(curl -sSf --retry 3 --retry-delay 5 https://djjohnnydenver.com)
+          echo "$body" | grep -q "DJ Johnny" \
+            || { echo "Live page did not contain the expected content."; exit 1; }
+          echo "https://djjohnnydenver.com is serving the expected page."

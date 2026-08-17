@@ -134,29 +134,75 @@ document.addEventListener('DOMContentLoaded', () => {
 - Set correct `Content-Type` metadata when uploading (S3 does not always infer it automatically).
 - Enable gzip compression via CloudFront or pre-compress assets before upload.
 
-### Recommended Deploy Command (AWS CLI)
+### Deploying
+
+**Deploys are automated.** Push to `main` and GitHub Actions handles it:
+
+| Workflow | Fires when | Does |
+|----------|-----------|------|
+| `.github/workflows/deploy-site.yml`   | `index.html`, `css/**`, `js/**`, `images/**`, `logos/**`, `*.svg/xml/txt` change | asset check → S3 sync (2 TTL passes) → CloudFront invalidation → live smoke test |
+| `.github/workflows/deploy-lambda.yml` | `infra/lambda/**` changes | 19 unit tests → zip → `update-function-code` → honeypot smoke test |
+
+Auth is OIDC — no AWS keys are stored in GitHub. Setup lives in
+`infra/README.md` § 8. Rollback is `git revert <sha> && git push`.
+
+### Manual Deploy Command (fallback)
+
+Use only when Actions is unavailable. **Keep the excludes in sync with
+`deploy-site.yml`** — that workflow is the source of truth.
+
+> **No filename here is content-hashed** — `styles.css`, `main.js`, and
+> `img-3078.jpeg` keep stable names across deploys. Cache headers are therefore
+> the *only* thing controlling staleness, so the short/long split below is by
+> update pattern: the HTML/CSS/JS shell is edited in place and stays short-lived;
+> imagery is added over time and can cache long.
 
 ```bash
-# Sync local build to S3, delete removed files, set cache headers
-aws s3 sync . s3://YOUR-BUCKET-NAME \
+export DISTRIBUTION_ID=...   # CloudFront distribution for djjohnnydenver.com
+
+# 1. Site shell — short TTL; stable filenames that get edited in place
+aws s3 sync . s3://djjohnnydenver.com --delete \
   --exclude ".git/*" \
+  --exclude ".github/*" \
+  --exclude ".gitignore" \
+  --exclude ".claude/*" \
   --exclude "CLAUDE.md" \
   --exclude "*.md" \
   --exclude "infra/*" \
-  --delete \
-  --cache-control "max-age=86400, public"
+  --exclude "docs/*" \
+  --exclude "images/*" \
+  --exclude "logos/*" \
+  --cache-control "max-age=3600, public" \
+  --region us-west-2
 
-# Set longer cache for hashed static assets (images, fonts)
-aws s3 cp assets/ s3://YOUR-BUCKET-NAME/assets/ \
-  --recursive \
-  --cache-control "max-age=31536000, public, immutable"
+# 2. Imagery — long TTL; uploaded once, added to rather than overwritten
+aws s3 sync images/ s3://djjohnnydenver.com/images/ --delete \
+  --cache-control "max-age=2592000, public" --region us-west-2
+
+aws s3 sync logos/ s3://djjohnnydenver.com/logos/ --delete \
+  --cache-control "max-age=2592000, public" --region us-west-2
+
+# 3. Always invalidate — CloudFront serves the old page until you do
+aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
 ```
+
+**Rules that bite:**
+- `--exclude` also protects a file from `--delete`. Adding an exclude does **not**
+  remove what is already in the bucket — clear it with an explicit `aws s3 rm`.
+- Never mark these assets `immutable`. Filenames aren't hashed, so a browser that
+  cached `styles.css` would never revalidate it, and a CloudFront invalidation
+  cannot override a client-side `immutable` directive.
+- To replace an image, upload it under a **new filename** and update the `src`.
+  Overwriting in place strands returning visitors on the old copy for up to 30 days.
+- Local AWS CLI v1 (`C:\Program Files\Amazon\AWSCLI`) shadows v2
+  (`C:\Program Files\Amazon\AWSCLIV2`) on PATH — prepend the v2 directory first.
 
 ### CloudFront (Optional but Recommended)
 - Create a CloudFront distribution pointing to the S3 static website endpoint (not the S3 REST endpoint).
 - Set default root object to `index.html`.
 - Create a custom error response: HTTP 403/404 → `/error.html` → 200.
-- Invalidate the cache after every deploy: `aws cloudfront create-invalidation --distribution-id YOUR_ID --paths "/*"`
+- Invalidate the cache after every deploy — step 3 above. This is not optional;
+  without it the CDN keeps serving the previous page until TTL expires.
 
 ---
 
