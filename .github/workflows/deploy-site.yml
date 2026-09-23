@@ -44,7 +44,11 @@ jobs:
           missing = []
           for page in ("index.html", "error.html"):
               html = pathlib.Path(page).read_text(encoding="utf-8")
-              for src in re.findall(r'<img[^>]+src="([^"]+)"', html):
+              srcs = re.findall(r'<img[^>]+src="([^"]+)"', html)
+              # <picture><source srcset="a.webp 640w, b.webp 1280w"> — every candidate URL
+              for srcset in re.findall(r'<source[^>]+srcset="([^"]+)"', html):
+                  srcs += [c.split()[0] for c in srcset.split(",") if c.strip()]
+              for src in srcs:
                   if src.startswith(("http://", "https://", "data:", "//")):
                       continue
                   if not pathlib.Path(src.lstrip("/")).is_file():

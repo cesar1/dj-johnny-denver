@@ -679,6 +679,10 @@ h1, h2, h3 {
   background: var(--surface);
 }
 
+/* <picture> is only a WebP/JPEG switch — keep it out of the layout so the
+   img still sizes against the grid tile exactly as before */
+.gallery-item picture { display: contents; }
+
 .gallery-item img {
   width: 100%;
   height: 100%;
